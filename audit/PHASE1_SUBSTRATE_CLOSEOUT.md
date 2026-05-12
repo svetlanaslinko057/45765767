@@ -8,18 +8,19 @@ Endpoint registry: [`ENDPOINT_FAMILY_REGISTRY.md`](./ENDPOINT_FAMILY_REGISTRY.md
 
 ---
 
-## 0. Surfaces (slice order)
+## 0. Surfaces (slice order — chronology sensitivity)
 
-| # | Concept | Closes |
-|---|---|---|
-| 1 | ClientDeliverable | Delivery lifecycle |
-| 2 | ClientVersions | Chronology lifecycle |
-| 3 | ClientCabinet | Cabinet overview |
-| 4 | DeveloperGrowth | Career lifecycle |
-| 5 | DeveloperWork | Execution lifecycle |
-| 6 | ProviderInbox | Communication lifecycle |
+| # | Concept | Closes | Why this position |
+|---|---|---|---|
+| 1 | ClientDeliverable | Delivery lifecycle | Strongest contract pressure; dual endpoint family makes it the canonical test of I-03 |
+| 2 | ClientVersions | Chronology lifecycle | Chronological ordering = strongest backend-truth requirement |
+| 3 | ClientCabinet | Cabinet overview | Aggregation-heavy; absorbs BD-04 useMemo carve-out |
+| 4 | DeveloperWork | Execution lifecycle | Aggregation pressure (`workLogs.reduce`); critical timer state |
+| 5 | DeveloperGrowth | Career lifecycle | Mostly aggregation; lower lifecycle-criticality than Work |
+| 6 | ProviderInbox | Communication lifecycle | Highest violation density; benefits from doctrine maximally proven first |
 
-Together these stabilize the operational graph.
+Together these stabilize the operational graph. Order swapped from initial plan:
+`DeveloperWork` precedes `DeveloperGrowth` per chronology-sensitivity criterion.
 
 ---
 
@@ -56,16 +57,25 @@ A slice is `frozen` only when **all** of the following hold:
 
 ## 3. Slice matrix
 
-| # | Surface | Web file | Mobile file | Forbidden grammar count | Independent GETs | POST→refresh | Backend gaps | Web/Mobile parity | Smoke | Status | Contract owner | Last verified commit | Notes |
+| # | Surface | Web file | Mobile file | Forbidden grammar (real) | Optimistic mut. | Convenience state | Legacy endpoint family use | Loading/error/empty | Web/Mobile parity | Status | Contract owner | Last verified commit | Notes |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| 1 | ClientDeliverable | `web/src/pages/ClientDeliverablePage.js` | **missing** — to create `frontend/app/client/deliverable/[id].tsx` | `.filter` ×3 (lines 127–129) | 1 GET (current); target 1 canonical GET | ❌ optimistic mutation lines 62, 81 | wrong family (B legacy); see §5 | ❌ no mobile counterpart screen | not run | `audit` | — | `54c05b9` | Drives endpoint-family resolution (registry concept #1). |
-| 2 | ClientVersions | `web/src/pages/ClientVersionsPage.js` | — | — | — | — | — | — | — | `pending` | — | — | — |
-| 3 | ClientCabinet | `web/src/pages/ClientCabinet.js` | `frontend/app/client/*` (multiple) | — | — | — | — | — | — | `pending` | — | — | Absorbs BD-04 (useMemo carve-out from slice #1). |
-| 4 | DeveloperGrowth | `web/src/pages/DeveloperGrowthPage.js` (verify exists) | `frontend/app/developer/growth.tsx` | — | — | — | — | — | — | `pending` | — | — | — |
-| 5 | DeveloperWork | `web/src/pages/DeveloperWorkPage.js` (verify exists) | `frontend/app/developer/work.tsx` | — | — | — | — | — | — | `pending` | — | — | — |
-| 6 | ProviderInbox | `web/src/pages/ProviderInbox.js` (verify exists) | `frontend/app/inbox.tsx` | — | — | — | — | — | — | `pending` | — | — | — |
+| 1 | ClientDeliverable | `web/src/pages/ClientDeliverablePage.js` | **missing** → create `frontend/app/client/deliverable/[id].tsx` | `.filter` ×3 (synth changeSummary) | **2** (lines 62, 81) | **yes** (`changeSummary`, 8 uses) | **3 legacy calls** (A=0, B=3) | loading ✅ / error ❌ (alert×2) / empty 🟡 | ❌ no mobile screen | `audit` | — | `54c05b9` | Highest contract-pressure; drives I-03 resolution. |
+| 2 | ClientVersions | `web/src/pages/ClientVersionsPage.js` | **missing** → to design | clean | 0 | 0 | 0 (uses `/api/client/projects/.../versions` — to verify) | loading ✅ / error 🟡 / empty 🟡 | ❌ no mobile screen | `audit` | — | `54c05b9` | Cleanest static snapshot among 6; chronology authority test. |
+| 3 | ClientCabinet | `web/src/pages/ClientCabinet.js` | **missing** + parts in `frontend/app/client/*` | `Math.min` ×1 (cosmetic clamp) | 0 | 0 | 1 canonical call (`simulate-payment`) | loading ✅ / error 🟡 (alert×1) / empty 🟡 | ❌ no full counterpart | `audit` | — | `54c05b9` | Absorbs BD-04 (`useMemo` filter from `app/client/projects/[id].tsx:182`). |
+| 4 | DeveloperWork | `web/src/pages/DeveloperWorkPage.js` | `frontend/app/developer/work.tsx` | `.reduce` ×1 (real — `totalHours` aggregation, line 152); `.filter` ×1 (form-cleanup, acceptable); `Math.min` ×1 (cosmetic) — **1 real violation** | 0 | 0 | 0 | loading ✅ / error 🟡 (alert×4) / empty 🟡 | ✅ both surfaces exist (but mobile has C-7 violation) | `audit` | — | `54c05b9` | Web `.reduce(totalHours)` = page aggregation = I-01/I-04 breach. Mobile `tasks.filter().sort()` = hide+reorder. |
+| 5 | DeveloperGrowth | `web/src/pages/DeveloperGrowthPage.js` | `frontend/app/developer/growth.tsx` | `Math.min` ×2 (cosmetic clamps) — **0 real violations** | 0 | 0 | 0 (to verify) | loading ✅ / error 🟡 / empty 🟡 ; mobile: loading **❌ (0 explicit branch)** | ✅ both surfaces | `audit` | — | `54c05b9` | Cleanest from forbidden-grammar lens; check authority for tier/network aggregates (likely backend already). |
+| 6 | ProviderInbox | `web/src/pages/ProviderInbox.js` | `frontend/app/inbox.tsx` | `.filter` ×3 (1 synthetic-lifecycle expired removal + 2 local-list removals); `Math.max(0, expires_in-1)` — **3 real violations** | **2** (lines 79, 95) + **2 list removals** (107, 124) = 4 mutation-class breaches | 0 | 0 (uses canonical inbox endpoints — verify) | mobile: loading **❌ (0 explicit branch)** ; web: loading ✅ / error 🟡 (alert×2) | ✅ both surfaces (but both with high violation density) | `audit` | — | `54c05b9` | **Highest violation density**. Countdown decrement (line 69) + filter expired (line 70) = synthetic lifecycle. POST→local removal = synthetic state. Placed last in order so doctrine is maximally proven before rewrite. |
 
 `Contract owner` and `Last verified commit` populated when slice moves to `frozen`.
+
+### Additional surfaces discovered during snapshot (not in original Phase 1 plan)
+
+| Surface | Issue | Decision |
+|---|---|---|
+| `web/src/pages/ClientDeliverable.js` (singular!) | 2 legacy `/api/deliverables/*` calls (lines 66, 82); 323 lines; imported in `App.js:35` | **Registered as BD-07** (legacy duplicate deliverable surface). Slice #1 owns its closure (either remove it, redirect to canonical `ClientDeliverablePage`, or sunset). |
+| `web/src/pages/ClientProjectPage.js` | Mixed: 2 legacy `/api/deliverables/*` (lines 465, 505) + 1 canonical `/api/client/deliverables/*/pay` (line 481) | **Registered as BD-08** (mixed-family consumer). Closed in slice #3 (ClientCabinet) since it's a project-level surface that overlaps both Deliverable and Cabinet concerns. |
+| `web/src/pages/ClientProjects.js` (list) | Legacy enum value `'pending'` in filter chain (line 86) | Bounded debt under BD-03 (already covers `pending` enum). No new entry needed. |
+| `web/src/pages/TesterValidationPage.js` | Heavy `'pending'` use, but on `validation` collection — different concept than deliverable | Out of scope: `validation.status` enum follows module/QA lifecycle (§3 ladder), not deliverable lifecycle. No violation. |
 
 ---
 
@@ -155,24 +165,125 @@ one slice is `frozen`** — extraction without evidence produces giant component
 
 ## 9. Regression anchors
 
-Captured at doctrine freeze. Re-measured at each slice boundary.
+Baseline snapshot captured 2026-05-12 via static grep (no runtime). To be
+re-measured at each slice boundary.
 
-| Anchor | Snapshot @ 2026-05-12 | After slice #1 | After slice #2 | … |
-|---|---|---|---|---|
-| `.reduce` count in `/app/web/src/pages` | _to be snapshotted by Phase 0.5_ | — | — | — |
-| `.filter` count in `/app/web/src/pages` | _to be snapshotted by Phase 0.5_ | — | — | — |
-| `useMemo` count in `/app/web/src/pages` | _to be snapshotted by Phase 0.5_ | — | — | — |
-| Optimistic mutation count (page scope) | _to be snapshotted_ | — | — | — |
-| Legacy `/api/deliverables/*` call-site count | 1 (web ClientDeliverablePage) | target 0 | — | — |
-| Legacy enum `revision_requested` / `pending` write count | _to be snapshotted_ | — | — | — |
-| Convenience state symbol count (I-02 list) | _to be snapshotted_ | should be 0 | — | — |
-| Concepts with parity gap (no counterpart screen) | 1 confirmed (Deliverable mobile) | target 0 | — | — |
+| Anchor | Snapshot @ 2026-05-12 | After slice #1 | After slice #2 | After slice #3 | After slice #4 | After slice #5 | After slice #6 |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| `.reduce(` in Phase 1 web surfaces | **1** (DeveloperWorkPage:152) | — | — | — | target 0 | — | — |
+| `.filter(` in Phase 1 web surfaces (excl. form-cleanup & cosmetic) | **6** (CD ×3 synth, PI ×3) | target 3 (CD ×0) | — | — | — | — | target 0 |
+| `useMemo(` in Phase 1 web surfaces | **0** | 0 | 0 | 0 | 0 | 0 | 0 |
+| `Math.max\|min(` excl. cosmetic clamps | **0 real** (all 6 matches are progress-bar UI) | 0 | 0 | 0 | 0 | 0 | 0 |
+| Optimistic mutation occurrences (`set\w+\(prev => \(\{ \.\.\.prev,` pattern) | **6** (CD ×2, PI ×4 incl. list-removals) | target 4 | — | — | — | — | target 0 |
+| Legacy `/api/deliverables/*` call-sites | **8** (CDP ×3 + CD-singular ×2 + CPP ×2 + slice-unscoped ×1) | target 5 (CDP ×0) | — | target 3 (CPP ×0) | — | — | — |
+| Canonical `/api/client/deliverables/*` call-sites | **5** (chat, decision-hub, projects/[id], CC simulate-payment, CPP pay) | target 7+ (after CDP migration) | — | target 9+ (after CPP migration) | — | — | — |
+| Legacy enum `revision_requested` writes (page scope) | **1** (CDP:81 optimistic mutation — disappears with I-05) | 0 | 0 | 0 | 0 | 0 | 0 |
+| Legacy enum `pending` deliverable status reads (page scope) | **3** (CDP:121, CDP:122-equiv, ClientProjects:86) | target 1 (CDP ×0) | — | target 0 | — | — | — |
+| Convenience state symbol count (I-02 forbidden list) | **0** verbatim ; **1 informal** (`changeSummary` synthesis in CDP) | target 0 informal | 0 | 0 | 0 | 0 | 0 |
+| `alert(` as error UI fallback (Phase 1 surfaces) | **15** (CDP ×2, CC ×1, DWP ×4, PI ×2, work.tsx ×7 incl. Alert.alert) | target 13 (CDP ×0) | — | target 12 (CC ×0) | target 8 (DWP+work.tsx mostly closed) | — | target 0 |
+| Concepts with mobile parity gap | **3 of 6** (Deliverable, Versions, Cabinet) | target 2 | target 1 | target 0 | 0 | 0 | 0 |
+| Surfaces with explicit loading branch | **7 of 9** (mobile growth.tsx + inbox.tsx missing) | — | — | — | — | target 8 | target 9 |
+| Vendor name leakage outside `live_adapters.py` | **0** | 0 | 0 | 0 | 0 | 0 | 0 |
 
-Phase 0.5 testing walkthrough produces the initial snapshot column.
+Legend: `CD` = ClientDeliverable.js (singular legacy); `CDP` = ClientDeliverablePage.js; `CPP` = ClientProjectPage.js; `CC` = ClientCabinet.js; `DWP` = DeveloperWorkPage.js; `PI` = ProviderInbox.js.
 
 ---
 
-## 10. Testing-against-doctrine probes (for Phase 0.5)
+## 10. Semantic Authority Map
+
+For each Phase 1 surface, this table declares **who owns each concern**.
+Anything marked `backend` MUST come from the server response; UI just renders.
+Anything marked `frontend (cosmetic)` is presentation-only — no business value
+encoded.
+
+A "?" means the authority is currently unclear and must be resolved during
+the slice's audit-to-implementation transition.
+
+### 10.1 ClientDeliverable
+
+| Concern | Authority | Notes |
+|---|---|---|
+| Status lifecycle (`pending_approval → approved\|rejected`) | backend | I-03 enum ladder §3 of CONTRACT |
+| Approval permission (can current user approve?) | backend | NG-02 candidate `can_approve` flag — still 1-surface, not promoted |
+| What's changed (added/improved/fixed buckets) | **backend ?** | Currently fabricated client-side → NG-01 carve-out: section disappears until backend owns it |
+| Resource list (preview/api/repo URLs) | backend | Already provided in `blocks[]` |
+| Work units backing the deliverable | backend | Already provided in `work_units[]` via canonical GET |
+| Next step after approve/reject | backend (cosmetic copy frontend) | Dynamic next-step deferred to ClientCabinet (NG-03) |
+| Display grouping of blocks | frontend (cosmetic) | Sorting/grouping for visual rhythm, no business impact |
+
+### 10.2 ClientVersions
+
+| Concern | Authority | Notes |
+|---|---|---|
+| Version chronological order | backend | Strongest chronology authority test |
+| Diff between versions | backend | Server returns the diff payload |
+| Active version pointer | backend | — |
+| Version label / display name | backend | — |
+| Per-version metadata (created_at, author) | backend | — |
+| Time-since-now display | frontend (cosmetic) | `fmtRelative(created_at)` allowed |
+
+### 10.3 ClientCabinet
+
+| Concern | Authority | Notes |
+|---|---|---|
+| Project progress % | backend | Reads `project.progress` |
+| Modules count / status breakdown | backend | Server returns aggregates |
+| Pending deliverables list | backend (per query filter) | Adds `?status=pending_approval` filter param to canonical GET |
+| Aggregate totals (cost, hours) | backend | I-01 aggregation rule |
+| Confidence / risk score | backend | Already computed in `calculate_project_confidence` |
+| Next steps recommendations | backend | Already computed in `get_next_steps` helper |
+| Tab order / section visibility | frontend (cosmetic) | UI layout decision, no business value |
+
+### 10.4 DeveloperWork
+
+| Concern | Authority | Notes |
+|---|---|---|
+| Active timer state (running / stopped / category) | backend | `time_tracking_layer` — single source |
+| Total hours logged on a unit | **backend** | Currently `workLogs.reduce(sum)` on client — I-04 breach to close |
+| Submit eligibility (link required, status check) | backend | Form validation OK locally; business eligibility from server |
+| Task assignment list | backend | — |
+| Task ordering | backend | Mobile currently `tasks.filter().sort()` — I-04 breach to close |
+| Time elapsed display (live counter) | **backend ?** | Currently `Math.max(0, Math.round((now-start)/60000))` client-side — cosmetic since `start` is server-provided. Acceptable if `start` is the only server input. |
+| Submit modal copy | frontend (cosmetic) | — |
+
+### 10.5 DeveloperGrowth
+
+| Concern | Authority | Notes |
+|---|---|---|
+| Tier (junior/middle/senior/elite) | backend | — |
+| Network size, earnings, reputation | backend | — |
+| Next tier criteria (network_needed, earnings_needed) | backend | Already in response |
+| Progress-bar fill % | frontend (cosmetic clamp) | `Math.min(100, x*100)` is presentation, not derivation |
+| Achievement list | backend | — |
+| Leaderboard position | backend | — |
+
+### 10.6 ProviderInbox
+
+| Concern | Authority | Notes |
+|---|---|---|
+| Inbox item list | backend | — |
+| Item expiry / countdown | **backend (truth) + frontend (display ticker)** | Backend owns `expires_at`; UI may compute "seconds until" for display. Current code mutates `expires_in` on a timer + removes expired entries client-side = **I-01 + I-05 breach (synthetic lifecycle)**. Resolution: backend pushes update / UI re-reads on tick. |
+| Quick-mode eligibility (rating > 70) | backend | Currently `alert('требует рейтинг > 70')` client-side — should come as `can_quick_mode` flag |
+| Accept / decline action permissions | backend | NG-02 family |
+| Post-action list state | backend (refetch) | Currently `setInbox(prev => prev.filter(...))` — I-05 breach |
+| Profile status, quick-mode flag | backend | Currently `setProfile(prev => ({ ...prev, ... }))` — I-05 breach |
+| Recommended action highlight | backend | Currently inline `data?.recommended` + client filter to exclude it from others list — borderline; recommend backend returns `recommended` + `others` already separated |
+
+### Aggregate authority summary
+
+| Concern class | Backend | Frontend (cosmetic only) | Currently misowned |
+|---|---|---|---|
+| Lifecycle / state transitions | ✅ | ❌ | 6 occurrences (slice #1 + #6 mostly) |
+| Aggregation / totals | ✅ | ❌ | 1 occurrence (DWP totalHours) |
+| Permissions / authorization | ✅ | ❌ | 3 informal (CDP, PI ×2) — NG-02 / authority-flag promotion candidate |
+| Display ordering / grouping | varies | OK if presentation-only | 2 occurrences (mobile work.tsx, mobile inbox.tsx) |
+| Time-since / countdown | backend truth + UI tick | OK | 1 critical (PI synthetic lifecycle) |
+| Status labels / colors | frontend (cosmetic dictionary) | ✅ | none |
+| Progress-bar clamps | frontend (cosmetic) | ✅ | none — all 6 Math.min matches are presentation |
+
+---
+
+## 11. Testing-against-doctrine probes (for Phase 0.5b)
 
 Probes the testing walkthrough must measure. These are **objective**, not
 subjective ("clean / not clean"):
@@ -191,8 +302,9 @@ subjective ("clean / not clean"):
 
 ---
 
-## 11. Change log
+## 12. Change log
 
 | Date | Author | Change |
 |---|---|---|
 | 2026-05-12 | initial | Matrix scaffold; slice #1 (ClientDeliverable) audit row populated; gaps G-01..G-03 deferred to non-goals; carve-outs C-01..C-06 recorded. |
+| 2026-05-12 | Phase 0.5a snapshot | Slice matrix §3 populated with static-grep findings for all 6 surfaces. Surface order swapped (DeveloperWork now #4, DeveloperGrowth #5) per chronology-sensitivity criterion. §9 regression anchors baseline column filled. §10 Semantic Authority Map added (per-surface concern-ownership table). 2 additional surfaces discovered (`ClientDeliverable.js` singular, `ClientProjectPage.js` mixed) — registered as BD-07/BD-08 in SUBSTRATE_CONTRACT.md. ProviderInbox identified as highest-violation-density surface (synthetic lifecycle on countdown line 69–70, list-removal mutations 107/124, profile mutations 79/95). |
