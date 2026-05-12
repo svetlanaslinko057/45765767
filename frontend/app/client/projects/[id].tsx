@@ -393,6 +393,14 @@ export default function ClientProjectScreen() {
                     <Text style={s.btnGhostText}>Request changes</Text>
                   </TouchableOpacity>
                 </View>
+                <TouchableOpacity
+                  testID={`view-deliverable-${d.deliverable_id}`}
+                  style={s.decisionViewDetails}
+                  onPress={() => router.push(`/client/deliverable/${d.deliverable_id}` as any)}
+                >
+                  <Text style={s.decisionViewDetailsText}>View details</Text>
+                  <Ionicons name="chevron-forward" size={12} color={T.textMuted} />
+                </TouchableOpacity>
               </View>
             ))}
 
@@ -679,6 +687,8 @@ const s = StyleSheet.create({
   decisionCardSummary: { color: T.textMuted, fontSize: T.small, marginTop: 4 },
   decisionCardPrice: { color: T.primary, fontSize: T.body, fontWeight: '800', marginTop: 8 },
   decisionActions: { flexDirection: 'row', gap: T.sm, marginTop: T.md },
+  decisionViewDetails: { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 4, marginTop: T.sm, paddingTop: T.sm, borderTopWidth: 1, borderTopColor: T.border },
+  decisionViewDetailsText: { color: T.textMuted, fontSize: T.small, fontWeight: '500' },
   btn: { flex: 1, paddingVertical: 10, borderRadius: T.radiusSm, alignItems: 'center' },
   btnPrimary: { backgroundColor: T.primary },
   btnPrimaryText: { color: T.bg, fontSize: T.body, fontWeight: '800' },

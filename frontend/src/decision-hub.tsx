@@ -57,7 +57,7 @@ export default function DecisionHub() {
           key={d.deliverable_id}
           testID={`decision-hub-${d.deliverable_id}`}
           style={s.row}
-          onPress={() => router.push(`/client/projects/${d.project_id}` as any)}
+          onPress={() => router.push(`/client/deliverable/${d.deliverable_id}` as any)}
           activeOpacity={0.85}
         >
           <View style={{ flex: 1, marginRight: 10 }}>

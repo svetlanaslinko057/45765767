@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth, API } from '@/App';
 import axios from 'axios';
@@ -13,18 +13,52 @@ import {
   Link as LinkIcon,
   MessageSquare,
   CheckCircle2,
-  XCircle,
   Clock,
   Loader2,
   ChevronRight,
-  Sparkles,
   AlertCircle,
   ArrowRight,
-  Plus,
-  Minus,
   RefreshCw,
   HelpCircle
 } from 'lucide-react';
+
+/**
+ * ClientDeliverablePage — slice #1 governed rewrite.
+ *
+ * Authority model (frozen — see /app/audit/SUBSTRATE_CONTRACT.md):
+ *   - Canonical endpoint family: /api/client/deliverables/*
+ *   - Canonical status enum:     pending_approval → approved | rejected
+ *     Legacy read-side mapping:   pending → pending_approval,
+ *                                 revision_requested → rejected
+ *   - POST → refetch (no optimistic mutation, no local status flip).
+ *   - No client-side derivation of business state (no synthesized
+ *     summary buckets, no role/status-derived `canApprove`).
+ *   - Loading / error / empty separated structurally as inline branches.
+ */
+
+const STATUS_LABELS = {
+  pending_approval: 'pending approval',
+  approved: 'approved',
+  rejected: 'changes requested',
+};
+
+// Read-side normalization: legacy values are mapped to canonical for UI.
+// No writes ever produce legacy values (canonical backend enforces).
+function normalizeStatus(raw) {
+  if (raw === 'pending') return 'pending_approval';
+  if (raw === 'revision_requested') return 'rejected';
+  return raw;
+}
+
+const getBlockIcon = (type) => {
+  switch (type) {
+    case 'feature': return Layers;
+    case 'integration': return LinkIcon;
+    case 'api': return Code;
+    case 'design': return FileText;
+    default: return Layers;
+  }
+};
 
 const ClientDeliverablePage = () => {
   const { deliverableId } = useParams();
@@ -33,37 +67,45 @@ const ClientDeliverablePage = () => {
 
   const [deliverable, setDeliverable] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
   const [actionLoading, setActionLoading] = useState(false);
+  const [actionError, setActionError] = useState(null);
   const [showRejectModal, setShowRejectModal] = useState(false);
   const [rejectReason, setRejectReason] = useState('');
   const [showApproveConfirm, setShowApproveConfirm] = useState(false);
 
-  useEffect(() => {
-    const fetchDeliverable = async () => {
-      try {
-        const res = await axios.get(`${API}/deliverables/${deliverableId}`, { withCredentials: true });
-        setDeliverable(res.data);
-      } catch (error) {
-        console.error('Error fetching deliverable:', error);
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchDeliverable();
+  const fetchDeliverable = useCallback(async () => {
+    setError(null);
+    try {
+      const res = await axios.get(
+        `${API}/client/deliverables/${deliverableId}`,
+        { withCredentials: true }
+      );
+      setDeliverable(res.data);
+    } catch (e) {
+      setError(e?.response?.data?.message || e?.response?.data?.detail || 'Failed to load deliverable.');
+    } finally {
+      setLoading(false);
+    }
   }, [deliverableId]);
+
+  useEffect(() => {
+    fetchDeliverable();
+  }, [fetchDeliverable]);
 
   const handleApprove = async () => {
     setActionLoading(true);
+    setActionError(null);
     try {
-      await axios.post(`${API}/deliverables/${deliverableId}/approve`, null, {
-        params: { feedback: 'Approved' },
-        withCredentials: true
-      });
-      setDeliverable(prev => ({ ...prev, status: 'approved' }));
+      await axios.post(
+        `${API}/client/deliverables/${deliverableId}/approve`,
+        {},
+        { withCredentials: true }
+      );
       setShowApproveConfirm(false);
-    } catch (error) {
-      console.error('Error approving:', error);
-      alert('Failed to approve');
+      await fetchDeliverable();
+    } catch (e) {
+      setActionError(e?.response?.data?.message || e?.response?.data?.detail || 'Failed to approve.');
     } finally {
       setActionLoading(false);
     }
@@ -71,45 +113,56 @@ const ClientDeliverablePage = () => {
 
   const handleReject = async () => {
     if (!rejectReason.trim()) return;
-    
     setActionLoading(true);
+    setActionError(null);
     try {
-      await axios.post(`${API}/deliverables/${deliverableId}/reject`, null, {
-        params: { feedback: rejectReason },
-        withCredentials: true
-      });
-      setDeliverable(prev => ({ ...prev, status: 'revision_requested', client_feedback: rejectReason }));
+      await axios.post(
+        `${API}/client/deliverables/${deliverableId}/reject`,
+        { reason: rejectReason },
+        { withCredentials: true }
+      );
       setShowRejectModal(false);
       setRejectReason('');
-    } catch (error) {
-      console.error('Error rejecting:', error);
-      alert('Failed to request revision');
+      await fetchDeliverable();
+    } catch (e) {
+      setActionError(e?.response?.data?.message || e?.response?.data?.detail || 'Failed to request changes.');
     } finally {
       setActionLoading(false);
     }
   };
 
-  const getBlockIcon = (type) => {
-    switch (type) {
-      case 'feature': return Layers;
-      case 'integration': return LinkIcon;
-      case 'api': return Code;
-      case 'design': return FileText;
-      default: return Layers;
-    }
-  };
+  // ─── STRUCTURAL STATES — inline, no abstraction ─────────────────────
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-64">
+      <div className="flex items-center justify-center h-64" data-testid="deliverable-loading">
         <Loader2 className="w-8 h-8 animate-spin" />
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="flex items-center justify-center h-64" data-testid="deliverable-error">
+        <div className="text-center">
+          <AlertCircle className="w-12 h-12 text-danger mx-auto mb-4" />
+          <p className="text-danger font-medium mb-2">Couldn't load delivery</p>
+          <p className="text-muted-foreground text-sm mb-4">{error}</p>
+          <button
+            onClick={fetchDeliverable}
+            className="px-4 py-2 border border-border rounded-xl text-sm hover:bg-muted"
+            data-testid="deliverable-retry"
+          >
+            Try again
+          </button>
+        </div>
       </div>
     );
   }
 
   if (!deliverable) {
     return (
-      <div className="flex items-center justify-center h-64">
+      <div className="flex items-center justify-center h-64" data-testid="deliverable-empty">
         <div className="text-center">
           <Package className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
           <p className="text-muted-foreground">Deliverable not found</p>
@@ -118,23 +171,18 @@ const ClientDeliverablePage = () => {
     );
   }
 
-  const isPending = deliverable.status === 'pending';
-  const isApproved = deliverable.status === 'approved';
-  const isRevisionRequested = deliverable.status === 'revision_requested';
-
-  // Mock change summary (in real app, this would come from backend)
-  const changeSummary = {
-    added: deliverable.blocks?.filter(b => b.block_type === 'feature').map(b => b.title) || [],
-    improved: deliverable.blocks?.filter(b => b.block_type === 'integration').map(b => b.title) || [],
-    fixed: deliverable.blocks?.filter(b => b.block_type === 'api').map(b => b.title) || [],
-  };
+  const status = normalizeStatus(deliverable.status);
+  const isPendingApproval = status === 'pending_approval';
+  const isApproved = status === 'approved';
+  const isRejected = status === 'rejected';
 
   return (
     <div className="p-8 max-w-4xl mx-auto" data-testid="client-deliverable-page">
       {/* Breadcrumb */}
-      <button 
+      <button
         onClick={() => navigate('/client/dashboard')}
         className="flex items-center gap-2 text-muted-foreground hover:text-foreground transition-colors mb-6"
+        data-testid="deliverable-back"
       >
         <ArrowLeft className="w-4 h-4" />
         Back to Dashboard
@@ -151,7 +199,7 @@ const ClientDeliverablePage = () => {
         </div>
       )}
 
-      {isRevisionRequested && (
+      {isRejected && (
         <div className="mb-8 border border-warning/30 rounded-2xl bg-warning/10 p-6">
           <div className="flex items-center gap-4 mb-3">
             <RefreshCw className="w-8 h-8 text-warning" />
@@ -171,82 +219,34 @@ const ClientDeliverablePage = () => {
       {/* Header */}
       <div className="mb-8">
         <div className="flex items-center gap-3 text-muted-foreground text-sm mb-3">
-          <span className="px-2 py-1 bg-muted rounded-lg">{deliverable.version}</span>
-          <span>·</span>
+          {deliverable.version && (
+            <>
+              <span className="px-2 py-1 bg-muted rounded-lg">{deliverable.version}</span>
+              <span>·</span>
+            </>
+          )}
           <span className={`px-2 py-1 rounded-lg ${
-            isPending ? 'bg-warning/10 text-warning' :
+            isPendingApproval ? 'bg-warning/10 text-warning' :
             isApproved ? 'bg-success/10 text-success' :
             'bg-signal/10 text-signal'
           }`}>
-            {deliverable.status.replace('_', ' ')}
+            {STATUS_LABELS[status] || status}
           </span>
         </div>
         <h1 className="text-3xl font-bold tracking-tight mb-3">{deliverable.title}</h1>
-        <p className="text-lg text-muted-foreground">{deliverable.summary}</p>
+        {deliverable.summary && (
+          <p className="text-lg text-muted-foreground">{deliverable.summary}</p>
+        )}
       </div>
 
-      {/* Change Summary */}
-      <div className="mb-8 border border-border rounded-2xl overflow-hidden">
-        <div className="p-5 border-b border-border bg-muted/30">
-          <h2 className="font-semibold flex items-center gap-2">
-            <Sparkles className="w-4 h-4 text-warning" />
-            What's Changed in {deliverable.version}
-          </h2>
-        </div>
-        <div className="p-5 space-y-4">
-          {changeSummary.added.length > 0 && (
-            <div>
-              <div className="flex items-center gap-2 text-success text-sm font-medium mb-2">
-                <Plus className="w-4 h-4" />
-                Added
-              </div>
-              <ul className="space-y-1 ml-6">
-                {changeSummary.added.map((item, i) => (
-                  <li key={i} className="text-muted-foreground text-sm">• {item}</li>
-                ))}
-              </ul>
-            </div>
-          )}
-          {changeSummary.improved.length > 0 && (
-            <div>
-              <div className="flex items-center gap-2 text-signal text-sm font-medium mb-2">
-                <RefreshCw className="w-4 h-4" />
-                Improved
-              </div>
-              <ul className="space-y-1 ml-6">
-                {changeSummary.improved.map((item, i) => (
-                  <li key={i} className="text-muted-foreground text-sm">• {item}</li>
-                ))}
-              </ul>
-            </div>
-          )}
-          {changeSummary.fixed.length > 0 && (
-            <div>
-              <div className="flex items-center gap-2 text-warning text-sm font-medium mb-2">
-                <CheckCircle2 className="w-4 h-4" />
-                Completed
-              </div>
-              <ul className="space-y-1 ml-6">
-                {changeSummary.fixed.map((item, i) => (
-                  <li key={i} className="text-muted-foreground text-sm">• {item}</li>
-                ))}
-              </ul>
-            </div>
-          )}
-          {changeSummary.added.length === 0 && changeSummary.improved.length === 0 && changeSummary.fixed.length === 0 && (
-            <p className="text-muted-foreground text-sm">This delivery includes the features listed below.</p>
-          )}
-        </div>
-      </div>
-
-      {/* What's Included */}
+      {/* What's Included — pure backend render */}
       <div className="mb-8">
         <h2 className="text-xl font-semibold mb-4">What's Included</h2>
         <div className="space-y-4">
-          {deliverable.blocks?.map((block, index) => {
+          {(deliverable.blocks || []).map((block, index) => {
             const Icon = getBlockIcon(block.block_type);
             return (
-              <div 
+              <div
                 key={block.block_id || index}
                 className="border border-border rounded-xl p-5 hover:border-border transition-all"
               >
@@ -259,11 +259,13 @@ const ClientDeliverablePage = () => {
                       <h3 className="font-medium">{block.title}</h3>
                       <CheckCircle2 className="w-4 h-4 text-success" />
                     </div>
-                    <p className="text-muted-foreground text-sm mt-1">{block.description}</p>
+                    {block.description && (
+                      <p className="text-muted-foreground text-sm mt-1">{block.description}</p>
+                    )}
                     {(block.preview_url || block.api_url) && (
                       <div className="flex items-center gap-3 mt-3">
                         {block.preview_url && (
-                          <a 
+                          <a
                             href={block.preview_url}
                             target="_blank"
                             rel="noopener noreferrer"
@@ -274,7 +276,7 @@ const ClientDeliverablePage = () => {
                           </a>
                         )}
                         {block.api_url && (
-                          <a 
+                          <a
                             href={block.api_url}
                             target="_blank"
                             rel="noopener noreferrer"
@@ -291,11 +293,16 @@ const ClientDeliverablePage = () => {
               </div>
             );
           })}
+          {(!deliverable.blocks || deliverable.blocks.length === 0) && (
+            <p className="text-muted-foreground text-sm" data-testid="deliverable-blocks-empty">
+              No items in this delivery yet.
+            </p>
+          )}
         </div>
       </div>
 
       {/* Resources */}
-      {deliverable.resources?.length > 0 && (
+      {deliverable.resources && deliverable.resources.length > 0 && (
         <div className="mb-8">
           <h2 className="text-xl font-semibold mb-4">Resources</h2>
           <div className="grid grid-cols-2 gap-4">
@@ -312,7 +319,9 @@ const ClientDeliverablePage = () => {
                     <ExternalLink className="w-4 h-4 text-muted-foreground group-hover:text-muted-foreground" />
                     <div>
                       <h4 className="font-medium text-sm">{res.title}</h4>
-                      <p className="text-xs text-muted-foreground capitalize">{res.resource_type}</p>
+                      {res.resource_type && (
+                        <p className="text-xs text-muted-foreground capitalize">{res.resource_type}</p>
+                      )}
                     </div>
                   </div>
                   <ChevronRight className="w-4 h-4 text-muted-foreground group-hover:text-muted-foreground" />
@@ -323,7 +332,7 @@ const ClientDeliverablePage = () => {
         </div>
       )}
 
-      {/* What Happens Next */}
+      {/* What Happens Next — static UX copy, not state-derived */}
       <div className="mb-8 border border-border rounded-2xl overflow-hidden">
         <div className="p-5 border-b border-border bg-muted/30">
           <h2 className="font-semibold flex items-center gap-2">
@@ -357,9 +366,9 @@ const ClientDeliverablePage = () => {
         </div>
       </div>
 
-      {/* Action Buttons */}
-      {isPending && (
-        <div className="border border-border rounded-2xl p-6 bg-muted/30">
+      {/* Action Buttons — backend status drives visibility, no role gating on UI */}
+      {isPendingApproval && (
+        <div className="border border-border rounded-2xl p-6 bg-muted/30" data-testid="deliverable-actions">
           <h3 className="font-semibold mb-4">Your Decision</h3>
           <div className="flex items-center gap-4">
             <button
@@ -386,6 +395,26 @@ const ClientDeliverablePage = () => {
         </div>
       )}
 
+      {/* Inline action error — structural render branch */}
+      {actionError && (
+        <div
+          className="mt-4 border border-danger/30 rounded-xl bg-danger/10 p-4 flex items-start gap-3"
+          data-testid="deliverable-action-error"
+        >
+          <AlertCircle className="w-5 h-5 text-danger flex-shrink-0 mt-0.5" />
+          <div className="flex-1">
+            <p className="text-sm text-danger font-medium">Action failed</p>
+            <p className="text-sm text-danger/80">{actionError}</p>
+          </div>
+          <button
+            onClick={() => setActionError(null)}
+            className="text-danger/70 hover:text-danger text-sm"
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
+
       {/* Approve Confirmation Modal */}
       {showApproveConfirm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80">
@@ -403,6 +432,7 @@ const ClientDeliverablePage = () => {
               <button
                 onClick={() => setShowApproveConfirm(false)}
                 className="flex-1 px-4 py-3 border border-border rounded-xl text-muted-foreground hover:bg-muted"
+                data-testid="approve-cancel"
               >
                 Cancel
               </button>
@@ -410,6 +440,7 @@ const ClientDeliverablePage = () => {
                 onClick={handleApprove}
                 disabled={actionLoading}
                 className="flex-1 px-4 py-3 bg-success text-success-ink font-semibold rounded-xl hover:bg-success/90 disabled:opacity-50 flex items-center justify-center gap-2"
+                data-testid="approve-confirm"
               >
                 {actionLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
                 Confirm Approval
@@ -419,7 +450,7 @@ const ClientDeliverablePage = () => {
         </div>
       )}
 
-      {/* Reject Modal with Required Reason */}
+      {/* Reject Modal */}
       {showRejectModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80">
           <div className="w-full max-w-lg mx-4 bg-card border border-border rounded-2xl overflow-hidden">
@@ -434,7 +465,7 @@ const ClientDeliverablePage = () => {
                 </div>
               </div>
             </div>
-            
+
             <div className="p-6">
               <label className="block text-sm font-medium mb-2">
                 What needs to be changed? <span className="text-danger">*</span>
@@ -459,6 +490,7 @@ const ClientDeliverablePage = () => {
                   setRejectReason('');
                 }}
                 className="flex-1 px-4 py-3 border border-border rounded-xl text-muted-foreground hover:bg-muted"
+                data-testid="reject-cancel"
               >
                 Cancel
               </button>

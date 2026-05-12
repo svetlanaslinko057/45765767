@@ -32,7 +32,6 @@ import WorkUnitDetail from "@/pages/WorkUnitDetail";
 import DeliverableBuilder from "@/pages/DeliverableBuilder";
 import DeveloperWorkUnit from "@/pages/DeveloperWorkUnit";
 import TesterValidation from "@/pages/TesterValidation";
-import ClientDeliverable from "@/pages/ClientDeliverable";
 import AdminDeliverableBuilder from "@/pages/AdminDeliverableBuilder";
 import AdminIntegrationsPage from "@/pages/AdminIntegrationsPage";
 import AdminPaymentsPage from "@/pages/AdminPaymentsPage";
