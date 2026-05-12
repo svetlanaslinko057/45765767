@@ -313,6 +313,7 @@ Items frozen with no new propagation. Each has a defined sunset trigger.
 | BD-03 | `pending` enum value on deliverables | read-side mapping to `pending_approval` | last writer migrated |
 | BD-04 | `useMemo` filter at `app/client/projects/[id].tsx:182` | until ClientCabinet slice | resolved in slice #3 |
 | BD-05 | ESLint TS rules not loading in web build (`DISABLE_ESLINT_PLUGIN=true` in build) | dev-only | Phase 2/3 config fix |
+| BD-09 | `web/.env` was not committed in the repo — caused `REACT_APP_BACKEND_URL=undefined` deployed artefact until 2026-05-12 | infrastructure | resolved 2026-05-12 (file created, build pipeline now produces functional bundle) |
 | BD-06 | `chat.tsx` inline approve/reject quick-actions | parallel surface concept | re-evaluate after Phase 1 |
 | BD-07 | `web/src/pages/ClientDeliverable.js` (singular, 323 lines) — duplicate legacy deliverable surface using `/api/deliverables/*` | ~~locked, owned by slice #1~~ **SUNSET** (file deleted, App.js import removed, 2026-05-12 during slice #1) | — |
 | BD-08 | `web/src/pages/ClientProjectPage.js` mixed-family: legacy approve/reject (lines 465, 505) + canonical pay (line 481) | locked, owned by slice #3 (ClientCabinet) | resolved when project-page deliverable actions move to canonical family |
